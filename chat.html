@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genie — AI Data Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #070b14;
+      --bg-2:     #0d1221;
+      --bg-3:     #111827;
+      --bg-4:     #1a2235;
+      --border:   rgba(255,255,255,0.07);
+      --border-2: rgba(255,255,255,0.13);
+      --accent:   #3b82f6;
+      --accent-2: #8b5cf6;
+      --glow:     rgba(59,130,246,0.15);
+      --text:     #f1f5f9;
+      --text-2:   #94a3b8;
+      --text-3:   #64748b;
+      --ok:       #10b981;
+      --err:      #ef4444;
+      --r:        12px;
+      --r-sm:     8px;
+      --mono: 'JetBrains Mono','Fira Code','Cascadia Code',Consolas,monospace;
+      --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    }
+
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .app { display: grid; grid-template-columns: 256px 1fr; height: 100vh; }
+
+    /* ── Sidebar ─────────────────────────────────────── */
+    .sidebar {
+      background: var(--bg-2); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sb-head {
+      padding: 18px 14px 14px; border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 17px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 14px;
+    }
+    .logo-icon {
+      width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .new-btn {
+      width: 100%; padding: 7px 10px; background: transparent; cursor: pointer;
+      border: 1px solid var(--border-2); border-radius: var(--r-sm);
+      color: var(--text-2); font-size: 13px; display: flex; align-items: center;
+      gap: 7px; transition: all .15s; font-family: var(--sans);
+    }
+    .new-btn:hover { background: var(--bg-3); border-color: var(--accent); color: var(--text); }
+
+    .sb-body { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .sb-body::-webkit-scrollbar { width: 4px; }
+    .sb-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+
+    .hist-label {
+      padding: 8px 6px 4px; font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .9px; color: var(--text-3);
+    }
+    .hist-item {
+      padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--text-2);
+      cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: all .15s;
+    }
+    .hist-item:hover { background: var(--bg-3); color: var(--text); }
+    .hist-item.active { background: var(--glow); color: var(--accent); }
+
+    .sb-foot {
+      padding: 14px; border-top: 1px solid var(--border);
+    }
+    .conn-status {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11.5px; color: var(--text-3);
+    }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+
+    /* ── Main ─────────────────────────────────────────── */
+    .main { display: flex; flex-direction: column; overflow: hidden; }
+
+    .top-bar {
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(7,11,20,.85); backdrop-filter: blur(12px); flex-shrink: 0;
+    }
+    .top-bar h1 { font-size: 15px; font-weight: 600; }
+    .badge-live {
+      font-size: 11px; padding: 2px 10px;
+      background: rgba(16,185,129,.1); color: var(--ok);
+      border: 1px solid rgba(16,185,129,.2); border-radius: 20px;
+    }
+
+    /* ── Messages ──────────────────────────────────────── */
+    .msgs { flex: 1; overflow-y: auto; padding: 28px 24px; display: flex; flex-direction: column; gap: 28px; }
+    .msgs::-webkit-scrollbar { width: 6px; }
+    .msgs::-webkit-scrollbar-track { background: transparent; }
+    .msgs::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+
+    /* Welcome */
+    .welcome {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 28px; padding: 40px; text-align: center;
+    }
+    .wl-icon {
+      width: 72px; height: 72px; border-radius: 20px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: flex; align-items: center; justify-content: center; font-size: 36px;
+      box-shadow: 0 8px 40px rgba(59,130,246,.35);
+    }
+    .wl-title {
+      font-size: 26px; font-weight: 700; letter-spacing: -.4px;
+      background: linear-gradient(135deg,#fff,var(--text-2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .wl-sub { font-size: 14px; color: var(--text-2); max-width: 440px; line-height: 1.75; margin-top: 6px; }
+    .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 580px; width: 100%; }
+    .sug-card {
+      padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: var(--r); cursor: pointer; text-align: left; transition: all .2s;
+      font-size: 13px; color: var(--text-2);
+    }
+    .sug-card:hover { background: var(--bg-3); border-color: var(--accent); color: var(--text); transform: translateY(-2px); box-shadow: 0 6px 24px var(--glow); }
+    .sug-title { font-weight: 600; color: var(--text); font-size: 13px; margin-bottom: 4px; }
+
+    /* Message Row */
+    .msg { display: flex; gap: 12px; animation: fadeUp .3s ease; max-width: 100%; }
+    .msg.user { flex-direction: row-reverse; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .av {
+      width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+    }
+    .av-user { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+    .av-ai   { background: var(--bg-3); border: 1px solid var(--border-2); }
+
+    .bubble {
+      max-width: min(76%, 860px); padding: 13px 16px;
+      border-radius: var(--r); font-size: 14px; line-height: 1.75;
+    }
+    .msg.user .bubble {
+      background: linear-gradient(135deg,#1d4ed8,#6d28d9); color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+    .msg.ai .bubble {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-bottom-left-radius: 3px; color: var(--text); width: 100%;
+    }
+
+    /* ── Result blocks ─────────────────────────────────── */
+    .result + .result { margin-top: 18px; }
+
+    /* Markdown text */
+    .md p { margin-bottom: 10px; }
+    .md p:last-child { margin-bottom: 0; }
+    .md strong { color: #fff; font-weight: 600; }
+    .md em { color: var(--text-2); }
+    .md h1,.md h2,.md h3 { color: #fff; margin: 14px 0 6px; }
+    .md ul,.md ol { padding-left: 20px; margin: 8px 0; }
+    .md li { margin: 3px 0; }
+    .md code { background: var(--bg-3); border: 1px solid var(--border-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 12.5px; color: #7dd3fc; }
+    .md a { color: var(--accent); text-decoration: none; }
+    .md a:hover { text-decoration: underline; }
+    .md blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-2); margin: 8px 0; }
+
+    /* SQL block */
+    .sql-wrap { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+    .sql-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px; background: var(--bg-3); cursor: pointer; user-select: none;
+    }
+    .sql-head-l { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .7px; }
+    .sql-badge { background: rgba(59,130,246,.14); color: var(--accent); padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid rgba(59,130,246,.2); }
+    .sql-chev { transition: transform .2s; }
+    .sql-collapsed .sql-chev { transform: rotate(-90deg); }
+    .sql-collapsed .sql-body { display: none; }
+    .copy-btn {
+      background: transparent; border: 1px solid var(--border-2); border-radius: 5px;
+      padding: 2px 9px; font-size: 11px; color: var(--text-3); cursor: pointer;
+      transition: all .15s; font-family: var(--sans);
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .copy-btn.ok { border-color: var(--ok); color: var(--ok); }
+    .sql-body { overflow-x: auto; background: #080d18; padding: 14px 16px; }
+    .sql-body pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.75; margin: 0; white-space: pre; }
+    /* SQL token colours */
+    .t-kw   { color: #c084fc; }
+    .t-fn   { color: #67e8f9; }
+    .t-str  { color: #86efac; }
+    .t-num  { color: #fbbf24; }
+    .t-tick { color: #e2e8f0; }
+    .t-dot  { color: var(--text-3); }
+
+    /* Data section */
+    .data-sec { margin-top: 12px; }
+    .tabs { display: flex; gap: 2px; padding: 4px; background: var(--bg-3); border-radius: 8px; width: fit-content; margin-bottom: 12px; }
+    .tab {
+      padding: 4px 14px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      cursor: pointer; border: none; background: transparent; color: var(--text-3);
+      transition: all .15s; font-family: var(--sans);
+    }
+    .tab.on { background: var(--bg-4); color: var(--text); box-shadow: 0 1px 5px rgba(0,0,0,.35); }
+    .tab:hover:not(.on) { color: var(--text-2); }
+    .pane { display: none; }
+    .pane.on { display: block; }
+
+    /* Table */
+    .tbl-wrap { overflow-x: auto; border-radius: var(--r-sm); border: 1px solid var(--border); }
+    .dtbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .dtbl thead tr { background: var(--bg-3); border-bottom: 1px solid var(--border-2); }
+    .dtbl th { padding: 9px 13px; text-align: left; font-weight: 600; font-size: 11.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+    .dtbl td { padding: 8px 13px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12.5px; color: var(--text); white-space: nowrap; }
+    .dtbl tbody tr:last-child td { border-bottom: none; }
+    .dtbl tbody tr:hover td { background: var(--bg-3); }
+    .td-r { text-align: right; color: #7dd3fc; }
+    .td-d { color: #86efac; }
+    .td-rows { padding: 8px 13px; font-size: 11.5px; color: var(--text-3); background: var(--bg-3); text-align: right; border-top: 1px solid var(--border); }
+
+    /* Chart container */
+    .chart-box { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--r); padding: 18px 20px; }
+    .chart-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .chart-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+    .ct-btns { display: flex; gap: 4px; }
+    .ct-btn {
+      padding: 4px 11px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      border: 1px solid var(--border-2); background: transparent; color: var(--text-3);
+      cursor: pointer; text-transform: uppercase; letter-spacing: .5px; transition: all .15s; font-family: var(--sans);
+    }
+    .ct-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ct-btn:hover:not(.on) { border-color: var(--accent); color: var(--accent); }
+    .chart-canvas { max-height: 320px; }
+
+    /* Image */
+    .res-img { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+    .res-img img { max-width: 100%; height: auto; display: block; }
+
+    /* Thinking */
+    .thinking { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: var(--text-3); font-size: 13px; }
+    .dots { display: flex; gap: 4px; }
+    .dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pop 1.2s ease-in-out infinite; }
+    .dots span:nth-child(2) { animation-delay: .2s; }
+    .dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes pop { 0%,60%,100% { opacity:.2; transform:scale(.8); } 30% { opacity:1; transform:scale(1); } }
+
+    /* Meta row */
+    .meta { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .meta-tag { font-size: 11px; padding: 2px 9px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 20px; color: var(--text-3); }
+
+    /* Error */
+    .err-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: var(--r-sm); padding: 10px 14px; font-size: 13px; color: #fca5a5; display: flex; align-items: flex-start; gap: 10px; }
+
+    /* ── Input ─────────────────────────────────────────── */
+    .input-area { padding: 14px 24px 20px; border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+    .mode-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px; gap: 10px;
+    }
+    .mode-meta { display: flex; flex-direction: column; gap: 2px; }
+    .mode-title { font-size: 12px; font-weight: 700; color: var(--text-2); letter-spacing: .3px; }
+    .mode-sub { font-size: 11px; color: var(--text-3); }
+    .switch {
+      position: relative; display: inline-block; width: 54px; height: 30px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; border-radius: 999px; cursor: pointer;
+      background: var(--bg-3); border: 1px solid var(--border-2); transition: .2s;
+    }
+    .slider::before {
+      content: ''; position: absolute; width: 22px; height: 22px; left: 3px; top: 3px;
+      border-radius: 50%; background: var(--text-2); transition: .2s;
+    }
+    .switch input:checked + .slider {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+    }
+    .switch input:checked + .slider::before { transform: translateX(24px); background: #fff; }
+    .input-wrap {
+      display: flex; align-items: flex-end; gap: 10px;
+      background: var(--bg-2); border: 1px solid var(--border-2);
+      border-radius: var(--r); padding: 11px 14px; transition: border-color .15s;
+    }
+    .input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+    #inp {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: var(--text); font-size: 14px; font-family: var(--sans); line-height: 1.6;
+      resize: none; max-height: 160px; overflow-y: auto;
+    }
+    #inp::placeholder { color: var(--text-3); }
+    #inp::-webkit-scrollbar { width: 4px; }
+    #inp::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+    .send {
+      width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all .15s; box-shadow: 0 2px 12px rgba(59,130,246,.35);
+    }
+    .send:hover:not(:disabled) { transform: scale(1.07); box-shadow: 0 4px 20px rgba(59,130,246,.45); }
+    .send:active:not(:disabled) { transform: scale(.96); }
+    .send:disabled { opacity: .4; cursor: not-allowed; }
+    .send svg { fill: #fff; }
+    .hint { margin-top: 7px; font-size: 11px; color: var(--text-3); text-align: center; }
+
+    /* Report mode output */
+    .report-wrap {
+      border: 1px solid var(--border); border-radius: var(--r-sm);
+      background: linear-gradient(180deg, rgba(59,130,246,.05), transparent);
+      padding: 14px;
+    }
+    .report-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 10px;
+    }
+    .report-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+    .report-sub { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+    .report-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+    .report-badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      border: 1px solid var(--border-2); color: var(--text-2); background: var(--bg-3);
+    }
+    .report-actions { display: flex; gap: 8px; align-items: center; }
+    .pdf-btn {
+      border: 1px solid rgba(16,185,129,.35); color: #d1fae5;
+      background: rgba(16,185,129,.14); border-radius: 8px;
+      font-size: 12px; font-weight: 700; letter-spacing: .2px;
+      padding: 7px 10px; cursor: pointer; font-family: var(--sans);
+    }
+    .pdf-btn:hover:not(:disabled) { filter: brightness(1.08); }
+    .pdf-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .report-hint { font-size: 11px; color: var(--text-3); }
+
+    @media (max-width: 720px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .suggestions { grid-template-columns: 1fr; }
+      .bubble { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sb-head">
+      <div class="logo">
+        <div class="logo-icon">🧞</div>
+        Genie
+      </div>
+      <button class="new-btn" onclick="newChat()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New conversation
+      </button>
+    </div>
+    <div class="sb-body" id="history">
+      <div class="hist-label">Today</div>
+    </div>
+    <div class="sb-foot">
+      <div class="conn-status">
+        <div class="dot"></div>
+        Azure Functions · localhost:7071
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <header class="top-bar">
+      <h1>Genie Data Assistant</h1>
+      <span class="badge-live">● Connected</span>
+    </header>
+
+    <div class="msgs" id="msgs">
+      <div class="welcome" id="welcome">
+        <div class="wl-icon">🧞</div>
+        <div>
+          <div class="wl-title">Ask your data anything</div>
+          <div class="wl-sub">Powered by Databricks Genie. Ask in plain English — get SQL results, interactive charts, and clear insights instantly.</div>
+        </div>
+        <div class="suggestions">
+          <div class="sug-card" onclick="useSuggestion(this)">
+            <div class="sug-title">📊 Sales Overview</div>
+            Show total sales by month
+          </div>
+          <div class="sug-card" onclick="useSuggestion(this)">
+            <div class="sug-title">🏆 Top Products</div>
+            What are the top 10 best-selling products?
+          </div>
+          <div class="sug-card" onclick="useSuggestion(this)">
+            <div class="sug-title">📈 Growth Trend</div>
+            Show revenue growth trend over the last year
+          </div>
+          <div class="sug-card" onclick="useSuggestion(this)">
+            <div class="sug-title">🌍 By Region</div>
+            Break down sales performance by region
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="input-area">
+      <div class="mode-row">
+        <div class="mode-meta">
+          <div class="mode-title" id="modeTitle">Quick Chat Mode</div>
+          <div class="mode-sub" id="modeSub">Single prompt response with charts and tables</div>
+        </div>
+        <label class="switch" title="Enable report generation mode">
+          <input type="checkbox" id="reportModeToggle" onchange="onReportModeToggle(this.checked)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="input-wrap">
+        <textarea id="inp" rows="1" placeholder="Ask anything about your data…"></textarea>
+        <button class="send" id="send" onclick="sendMsg()">
+          <svg width="15" height="15" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+        </button>
+      </div>
+      <div class="hint">Enter to send &nbsp;·&nbsp; Shift + Enter for new line</div>
+    </footer>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+const API = 'http://localhost:7071/api/genie-query';
+
+const NUM_TYPES  = new Set(['DOUBLE','FLOAT','INT','INTEGER','BIGINT','LONG','DECIMAL','SMALLINT','TINYINT','BYTE','SHORT','REAL','NUMERIC','FLOAT64','INT64','INT32']);
+const TIME_TYPES = new Set(['TIMESTAMP','DATE','TIMESTAMP_NTZ','DATETIME']);
+
+// Chart.js dark defaults
+Chart.defaults.color        = '#94a3b8';
+Chart.defaults.borderColor  = 'rgba(255,255,255,0.07)';
+Chart.defaults.font.family  = '-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif';
+Chart.defaults.font.size    = 12;
+
+const PALETTE = [
+  { line:'#3b82f6', bg:'rgba(59,130,246,.18)'  },
+  { line:'#8b5cf6', bg:'rgba(139,92,246,.18)'  },
+  { line:'#10b981', bg:'rgba(16,185,129,.18)'  },
+  { line:'#f59e0b', bg:'rgba(245,158,11,.18)'  },
+  { line:'#ef4444', bg:'rgba(239,68,68,.18)'   },
+  { line:'#06b6d4', bg:'rgba(6,182,212,.18)'   },
+  { line:'#f97316', bg:'rgba(249,115,22,.18)'  },
+  { line:'#a855f7', bg:'rgba(168,85,247,.18)'  },
+];
+
+let _chartData = {};   // chartId → { columns, rows }
+let _charts    = {};   // chartId → Chart instance
+let _uid       = 0;
+let _reportMode = false;
+let _reportUid  = 0;
+const uid = () => ++_uid;
+
+const REPORT_TEMPLATE = {
+  textSections: [
+    'Executive summary with leadership-ready narrative',
+    'Operational performance analysis and bottlenecks',
+    'Sales, inventory, damages, stales, and waste insights',
+    'Root-cause analysis with risk indicators',
+    'Actionable recommendations and next-30-60-90-day actions'
+  ],
+  chartSections: [
+    'Top damage locations (bar)',
+    'Forecast vs actual trend (line)',
+    'Waste contribution split (pie/donut)',
+    'Inventory variance and stales trend (line/stacked)',
+    'Product performance comparison (bar)',
+    'Site operational efficiency (bar/stacked)'
+  ]
+};
+
+/* ── Input auto-resize ──────────────────────────────── */
+const inp = document.getElementById('inp');
+inp.addEventListener('input', () => {
+  inp.style.height = 'auto';
+  inp.style.height = Math.min(inp.scrollHeight, 160) + 'px';
+});
+inp.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+/* ── Suggestion click ───────────────────────────────── */
+function useSuggestion(el) {
+  const text = el.querySelector('.sug-title').nextSibling.textContent.trim();
+  inp.value = text;
+  sendMsg();
+}
+
+/* ── New chat ───────────────────────────────────────── */
+function newChat() {
+  document.getElementById('msgs').innerHTML = buildWelcome();
+  document.querySelectorAll('.hist-item').forEach(el => el.classList.remove('active'));
+}
+
+function buildWelcome() {
+  return `<div class="welcome" id="welcome">
+    <div class="wl-icon">🧞</div>
+    <div>
+      <div class="wl-title">Ask your data anything</div>
+      <div class="wl-sub">Powered by Databricks Genie. Ask in plain English — get SQL results, interactive charts, and clear insights instantly.</div>
+    </div>
+    <div class="suggestions">
+      <div class="sug-card" onclick="useSuggestion(this)"><div class="sug-title">📊 Sales Overview</div>Show total sales by month</div>
+      <div class="sug-card" onclick="useSuggestion(this)"><div class="sug-title">🏆 Top Products</div>What are the top 10 best-selling products?</div>
+      <div class="sug-card" onclick="useSuggestion(this)"><div class="sug-title">📈 Growth Trend</div>Show revenue growth trend over the last year</div>
+      <div class="sug-card" onclick="useSuggestion(this)"><div class="sug-title">🌍 By Region</div>Break down sales performance by region</div>
+    </div>
+  </div>`;
+}
+
+/* ── Send ───────────────────────────────────────────── */
+async function sendMsg() {
+  const q = inp.value.trim();
+  if (!q) return;
+
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.remove();
+
+  inp.value = '';
+  inp.style.height = 'auto';
+  document.getElementById('send').disabled = true;
+
+  appendUser(q);
+  const tid = appendThinking();
+
+  try {
+    if (_reportMode) {
+      setThinkingMessage(tid, 'Building report prompt plan...');
+      const reportBundle = await runReportMode(q, tid);
+      removeEl(tid);
+      appendAIReport(reportBundle, q);
+      addHistory('Report: ' + q, reportBundle.conversation_id);
+    } else {
+      const data = await askGenie(q, 'chat-' + Date.now());
+      removeEl(tid);
+      appendAI(data);
+      addHistory(q, data.conversation_id);
+    }
+  } catch (err) {
+    removeEl(tid);
+    appendError('Could not reach the Genie API. Make sure func start is running on port 7071.', err.message);
+  }
+
+  document.getElementById('send').disabled = false;
+  inp.focus();
+}
+
+async function askGenie(question, correlationId) {
+  const res = await fetch(API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'x-correlation-id': correlationId },
+    body:    JSON.stringify({ question })
+  });
+
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+function onReportModeToggle(on) {
+  _reportMode = !!on;
+  const title = document.getElementById('modeTitle');
+  const sub   = document.getElementById('modeSub');
+  if (_reportMode) {
+    title.textContent = 'Report Mode';
+    sub.textContent   = 'Auto-runs section prompts, charts prompts, and exports leadership PDF';
+    inp.placeholder   = 'Example: Report on damaged locations in North America';
+  } else {
+    title.textContent = 'Quick Chat Mode';
+    sub.textContent   = 'Single prompt response with charts and tables';
+    inp.placeholder   = 'Ask anything about your data…';
+  }
+}
+
+function buildReportPrompts(baseQuestion) {
+  const context = [
+    'You are an executive analytics co-pilot for leadership reviews.',
+    'Use clear section headings, concise business language, and quantified insights.',
+    'Do not return SQL only. Prioritize interpretation and recommendations.',
+    'When returning chart-ready content, include SQL, chart_type, and structured data tables.'
+  ].join(' ');
+
+  const textTemplate = [
+    'TEXT TEMPLATE:',
+    '1) Section heading',
+    '2) Key metrics (3-5 bullets with numbers)',
+    '3) Interpretation (business impact)',
+    '4) Risks',
+    '5) Actions'
+  ].join('\n');
+
+  const chartTemplate = [
+    'CHART TEMPLATE:',
+    '1) Title',
+    '2) Chart type (bar/line/pie/stacked)',
+    '3) SQL query',
+    '4) Structured table output',
+    '5) Chart insight summary (2-3 bullets)'
+  ].join('\n');
+
+  return [
+    {
+      title: 'Executive Narrative',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nGenerate a 500-700 word executive report covering summary, operational performance, sales/inventory trends, damages/stales/waste, root causes, and recommendations. ${textTemplate}`
+    },
+    {
+      title: 'Damage Location Analysis',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nCreate top 5 highest damage locations analysis with a bar chart and interpretation. ${chartTemplate}`
+    },
+    {
+      title: 'Forecast vs Actual',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nCreate weekly or monthly forecast vs actual trend analysis with a line chart, key variance drivers, and risk indicators. ${chartTemplate}`
+    },
+    {
+      title: 'Waste and Stales',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nCreate waste contribution and stales trend analysis with pie/donut plus trend chart, including top products/sites driving waste. ${chartTemplate}`
+    },
+    {
+      title: 'Product and Site Performance',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nCreate product comparison and site efficiency analysis with chart-ready outputs and operational bottlenecks. ${chartTemplate}`
+    },
+    {
+      title: 'Leadership Actions',
+      prompt: `${context}\n\nUser request: ${baseQuestion}\n\nCreate prioritized 30-60-90 day action plan, owners, KPI impact, and implementation risks. ${textTemplate}`
+    }
+  ];
+}
+
+async function runReportMode(baseQuestion, thinkingId) {
+  const prompts = buildReportPrompts(baseQuestion);
+  const results = [];
+  let convId = '';
+  let reqId = '';
+  let totalDuration = 0;
+
+  for (let i = 0; i < prompts.length; i++) {
+    const p = prompts[i];
+    setThinkingMessage(thinkingId, `Report mode: running section ${i + 1}/${prompts.length} - ${p.title}`);
+    const data = await askGenie(p.prompt, `report-${Date.now()}-${i}`);
+    convId = data.conversation_id || convId;
+    reqId  = data.request_id || reqId;
+    totalDuration += data.metadata?.duration_ms || 0;
+
+    // Add a heading block so final report has deterministic structure.
+    results.push({ type: 'text', text: `## ${p.title}` });
+    (data.results || []).forEach(r => results.push(r));
+  }
+
+  return {
+    request_id: reqId,
+    conversation_id: convId,
+    status: 'COMPLETED',
+    results,
+    metadata: {
+      duration_ms: totalDuration,
+      prompt_count: prompts.length,
+      report_mode: true
+    },
+    report_templates: REPORT_TEMPLATE
+  };
+}
+
+function setThinkingMessage(id, text) {
+  const root = document.getElementById(id);
+  const span = root?.querySelector('.thinking span');
+  if (span) span.textContent = text;
+}
+
+/* ── DOM helpers ────────────────────────────────────── */
+function appendUser(text) {
+  getMsgs().insertAdjacentHTML('beforeend', `
+    <div class="msg user">
+      <div class="av av-user">U</div>
+      <div class="bubble">${esc(text)}</div>
+    </div>`);
+  scrollEnd();
+}
+
+function appendThinking() {
+  const id = 'th-' + uid();
+  getMsgs().insertAdjacentHTML('beforeend', `
+    <div class="msg ai" id="${id}">
+      <div class="av av-ai">🧞</div>
+      <div class="bubble">
+        <div class="thinking"><span>Genie is thinking</span><div class="dots"><span></span><span></span><span></span></div></div>
+      </div>
+    </div>`);
+  scrollEnd();
+  return id;
+}
+
+function appendError(msg, detail) {
+  getMsgs().insertAdjacentHTML('beforeend', `
+    <div class="msg ai">
+      <div class="av av-ai">🧞</div>
+      <div class="bubble">
+        <div class="err-box">
+          <span>⚠️</span>
+          <div><strong>${esc(msg)}</strong>${detail ? `<div style="margin-top:4px;font-size:12px;opacity:.7">${esc(detail)}</div>` : ''}</div>
+        </div>
+      </div>
+    </div>`);
+  scrollEnd();
+}
+
+function appendAI(data) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg ai';
+  wrapper.innerHTML = `
+    <div class="av av-ai">🧞</div>
+    <div class="bubble">
+      ${renderResults(data.results || [])}
+      ${renderMeta(data)}
+    </div>`;
+
+  getMsgs().appendChild(wrapper);
+
+  // Init charts after insertion
+  wrapper.querySelectorAll('[data-cid]').forEach(canvas => {
+    const cid = canvas.getAttribute('data-cid');
+    if (_chartData[cid]) initChart(canvas, cid);
+  });
+
+  scrollEnd();
+}
+
+function appendAIReport(data, baseQuestion) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg ai';
+  const reportId = `report-${++_reportUid}`;
+
+  wrapper.innerHTML = `
+    <div class="av av-ai">🧞</div>
+    <div class="bubble">
+      <div class="report-wrap" id="${reportId}">
+        <div class="report-head">
+          <div>
+            <div class="report-title">Executive Report</div>
+            <div class="report-sub">${esc(baseQuestion)}</div>
+          </div>
+          <div class="report-actions">
+            <button class="pdf-btn" onclick="downloadReportPdf('${reportId}', this)">Download PDF</button>
+          </div>
+        </div>
+        <div class="report-badges">
+          ${(data.report_templates?.textSections || []).map(x => `<span class="report-badge">${esc(x)}</span>`).join('')}
+          ${(data.report_templates?.chartSections || []).map(x => `<span class="report-badge">${esc(x)}</span>`).join('')}
+        </div>
+        ${renderResults(data.results || [])}
+        ${renderMeta(data)}
+      </div>
+      <div class="report-hint">PDF includes all visible report content and chart visuals.</div>
+    </div>`;
+
+  getMsgs().appendChild(wrapper);
+
+  wrapper.querySelectorAll('[data-cid]').forEach(canvas => {
+    const cid = canvas.getAttribute('data-cid');
+    if (_chartData[cid]) initChart(canvas, cid);
+  });
+
+  scrollEnd();
+}
+
+async function downloadReportPdf(reportId, btn) {
+  const root = document.getElementById(reportId);
+  if (!root || !window.jspdf || !window.html2canvas) {
+    appendError('PDF libraries are not loaded yet.', 'Try refreshing the page and run report mode again.');
+    return;
+  }
+
+  const oldLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Preparing PDF...';
+
+  try {
+    const canvas = await html2canvas(root, {
+      scale: 2,
+      backgroundColor: '#070b14',
+      useCORS: true,
+      allowTaint: true,
+      scrollX: 0,
+      scrollY: -window.scrollY
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const imgW = pageW - margin * 2;
+    const imgH = canvas.height * imgW / canvas.width;
+
+    let heightLeft = imgH;
+    let pos = margin;
+    pdf.addImage(imgData, 'PNG', margin, pos, imgW, imgH, '', 'FAST');
+    heightLeft -= (pageH - margin * 2);
+
+    while (heightLeft > 0) {
+      pos = heightLeft - imgH + margin;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', margin, pos, imgW, imgH, '', 'FAST');
+      heightLeft -= (pageH - margin * 2);
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    pdf.save(`genie-report-${stamp}.pdf`);
+  } catch (err) {
+    appendError('PDF generation failed.', err.message || 'Unknown PDF error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldLabel;
+  }
+}
+
+/* ── Render results ─────────────────────────────────── */
+function renderResults(results) {
+  const valid = results.filter(r => r.text || r.sql || r.data || r.image?.url || r.image?.data_url);
+  if (!valid.length) return '<div class="md" style="color:var(--text-3)"><em>No results returned.</em></div>';
+
+  // Strict two-pass order: all narrative text first, then analytics blocks.
+  const textBlocks = valid
+    .filter(r => typeof r.text === 'string' && r.text.trim())
+    .map(r => `<div class="result"><div class="md">${md(r.text)}</div></div>`)
+    .join('');
+
+  const analyticsBlocks = valid
+    .filter(r => r.sql || r.data || r.image?.url || r.image?.data_url)
+    .map(renderItem)
+    .join('');
+
+  return textBlocks + analyticsBlocks;
+}
+
+function renderItem(r) {
+  let h = '<div class="result">';
+
+  // SQL
+  if (r.sql) {
+    const sid = 's' + uid();
+    h += renderSql(r.sql, sid);
+  }
+
+  // Structured data → table + optional chart
+  if (r.data) {
+    const td = extractTableData(r.data);
+    if (td && td.rows.length > 0) h += renderDataSection(td);
+  }
+
+  // Image
+  if (r.image?.url || r.image?.data_url) {
+    const src = r.image.data_url || r.image.url;
+    const alt = r.image.caption ? escAttr(r.image.caption) : 'Chart';
+    h += `<div class="res-img"><img src="${escAttr(src)}" alt="${alt}" loading="lazy" /></div>`;
+  }
+
+  h += '</div>';
+  return h;
+}
+
+/* ── SQL block ──────────────────────────────────────── */
+function renderSql(sql, sid) {
+  return `
+    <div class="sql-wrap sql-collapsed" id="${sid}">
+      <div class="sql-head" onclick="toggleSql('${sid}')">
+        <div class="sql-head-l">
+          <span class="sql-badge">SQL</span>
+          Generated query
+          <svg class="sql-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <button class="copy-btn" onclick="copySql(event,'${sid}')" data-raw="${escAttr(sql)}">Copy</button>
+      </div>
+      <div class="sql-body"><pre>${hlSql(sql)}</pre></div>
+    </div>`;
+}
+
+function toggleSql(sid) {
+  document.getElementById(sid).classList.toggle('sql-collapsed');
+}
+
+function copySql(e, sid) {
+  e.stopPropagation();
+  const btn = e.target;
+  const raw = btn.getAttribute('data-raw');
+  navigator.clipboard.writeText(raw).then(() => {
+    btn.textContent = '✓ Copied'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
+  });
+}
+
+/* ── Data section ───────────────────────────────────── */
+function extractTableData(data) {
+  if (!data) return null;
+  const sr      = data.statement_response || data;
+  const columns = sr?.manifest?.schema?.columns || [];
+  const raw     = sr?.result?.data_array || [];
+  if (!columns.length || !raw.length) return null;
+
+  const rows = raw.map(row =>
+    row.map((cell, i) => {
+      const t = columns[i]?.type_name?.toUpperCase();
+      if (NUM_TYPES.has(t)) { const n = parseFloat(cell); return isNaN(n) ? cell : n; }
+      return cell;
+    })
+  );
+  return { columns, rows };
+}
+
+function renderDataSection({ columns, rows }) {
+  const hasNumeric = columns.some(c => NUM_TYPES.has(c.type_name?.toUpperCase()));
+  const canChart   = columns.length >= 2 && hasNumeric;
+  const cid        = 'c' + uid();
+
+  if (canChart) _chartData[cid] = { columns, rows };
+
+  let h = '<div class="data-sec">';
+
+  if (canChart) {
+    h += `
+      <div class="tabs">
+        <button class="tab on"  onclick="switchTab('${cid}','chart',this)">📊 Chart</button>
+        <button class="tab"     onclick="switchTab('${cid}','table',this)">⊞ Table</button>
+      </div>
+      <div id="${cid}-chart" class="pane on">${renderChartBox(cid, columns, rows)}</div>
+      <div id="${cid}-table" class="pane">${renderTable(columns, rows)}</div>`;
+  } else {
+    h += renderTable(columns, rows);
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function renderTable(columns, rows) {
+  const ths = columns.map(c => `<th>${esc(c.name)}</th>`).join('');
+  const trs = rows.map(row => {
+    const tds = row.map((cell, i) => {
+      const t   = columns[i]?.type_name?.toUpperCase();
+      const num = NUM_TYPES.has(t);
+      const dt  = TIME_TYPES.has(t);
+      const cls = num ? 'td-r' : dt ? 'td-d' : '';
+      const val = num ? fmtNum(cell) : dt ? fmtDate(cell) : esc(String(cell ?? ''));
+      return `<td class="${cls}">${val}</td>`;
+    }).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+
+  const totalRows = rows.length;
+  return `
+    <div class="tbl-wrap">
+      <table class="dtbl">
+        <thead><tr>${ths}</tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+      ${totalRows > 0 ? `<div class="td-rows">${totalRows} row${totalRows !== 1 ? 's' : ''}</div>` : ''}
+    </div>`;
+}
+
+/* ── Chart ──────────────────────────────────────────── */
+function renderChartBox(cid, columns, rows) {
+  const numCols  = columns.filter(c => NUM_TYPES.has(c.type_name?.toUpperCase()));
+  const labelCol = columns.find(c => !NUM_TYPES.has(c.type_name?.toUpperCase())) || columns[0];
+  const isTime   = TIME_TYPES.has(labelCol?.type_name?.toUpperCase());
+  const defType  = isTime ? 'line' : 'bar';
+
+  return `
+    <div class="chart-box">
+      <div class="chart-toolbar">
+        <div class="chart-label">${esc(numCols.map(c=>c.name).join(', '))} by ${esc(labelCol?.name||'value')}</div>
+        <div class="ct-btns">
+          <button class="ct-btn ${defType==='bar'?'on':''}"  onclick="changeType('${cid}','bar',this)">Bar</button>
+          <button class="ct-btn ${defType==='line'?'on':''}" onclick="changeType('${cid}','line',this)">Line</button>
+          <button class="ct-btn"                             onclick="changeType('${cid}','pie',this)">Pie</button>
+        </div>
+      </div>
+      <canvas class="chart-canvas" data-cid="${cid}"></canvas>
+    </div>`;
+}
+
+function buildConfig(type, columns, rows) {
+  const numCols  = columns.filter(c => NUM_TYPES.has(c.type_name?.toUpperCase()));
+  const labelCol = columns.find(c => !NUM_TYPES.has(c.type_name?.toUpperCase()));
+  const lblIdx   = labelCol ? columns.indexOf(labelCol) : 0;
+  const isTime   = TIME_TYPES.has(labelCol?.type_name?.toUpperCase());
+  const isPie    = type === 'pie';
+
+  const labels = rows.map(r => isTime ? fmtDate(String(r[lblIdx] ?? '')) : String(r[lblIdx] ?? ''));
+
+  const datasets = numCols.map((col, i) => {
+    const ci  = columns.indexOf(col);
+    const vals = rows.map(r => { const v = r[ci]; return typeof v === 'number' ? v : parseFloat(v) || 0; });
+    const c   = PALETTE[i % PALETTE.length];
+
+    const ds = {
+      label:           col.name,
+      data:            vals,
+      borderColor:     isPie ? PALETTE.map(x=>x.line) : c.line,
+      backgroundColor: isPie ? PALETTE.map(x=>x.line) : (type==='line' ? c.bg : c.bg),
+      borderWidth:     2,
+    };
+
+    if (type === 'line') {
+      ds.fill = true; ds.tension = 0.35;
+      ds.pointBackgroundColor = c.line; ds.pointRadius = 4; ds.pointHoverRadius = 6;
+    } else if (type === 'bar') {
+      ds.borderRadius = 5; ds.borderSkipped = false;
+    } else if (isPie) {
+      ds.borderColor = 'rgba(7,11,20,.6)'; ds.borderWidth = 3;
+    }
+
+    return ds;
+  });
+
+  if (isPie && datasets.length === 1) {
+    datasets[0].backgroundColor = PALETTE.map(x => x.line);
+    datasets[0].borderColor     = 'rgba(7,11,20,.6)';
+  }
+
+  return {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      animation: { duration: 600, easing: 'easeInOutQuart' },
+      plugins: {
+        legend: {
+          display: datasets.length > 1 || isPie,
+          position: isPie ? 'right' : 'top',
+          labels: { color:'#94a3b8', padding:14, usePointStyle:true, font:{size:12} }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(13,18,33,.96)', borderColor:'rgba(255,255,255,.1)', borderWidth:1,
+          titleColor:'#f1f5f9', bodyColor:'#94a3b8', cornerRadius:8, padding:12,
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed?.y ?? ctx.parsed;
+              return ` ${ctx.dataset.label}: ${typeof v==='number' ? fmtNum(v) : v}`;
+            }
+          }
+        }
+      },
+      scales: isPie ? {} : {
+        x: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#64748b', maxRotation:35, font:{size:11}} },
+        y: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#64748b', font:{size:11}, callback: v => fmtNum(v)} }
+      }
+    }
+  };
+}
+
+function initChart(canvas, cid) {
+  const { columns, rows } = _chartData[cid];
+  const labelCol = columns.find(c => !NUM_TYPES.has(c.type_name?.toUpperCase()));
+  const isTime   = TIME_TYPES.has(labelCol?.type_name?.toUpperCase());
+  const defType  = isTime ? 'line' : 'bar';
+  if (_charts[cid]) _charts[cid].destroy();
+  _charts[cid] = new Chart(canvas, buildConfig(defType, columns, rows));
+}
+
+function switchTab(cid, tab, btn) {
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById(`${cid}-chart`).classList.toggle('on', tab==='chart');
+  document.getElementById(`${cid}-table`).classList.toggle('on', tab==='table');
+}
+
+function changeType(cid, type, btn) {
+  btn.closest('.ct-btns').querySelectorAll('.ct-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  if (!_chartData[cid]) return;
+  const canvas = document.querySelector(`[data-cid="${cid}"]`);
+  if (!canvas) return;
+  if (_charts[cid]) _charts[cid].destroy();
+  _charts[cid] = new Chart(canvas, buildConfig(type, _chartData[cid].columns, _chartData[cid].rows));
+}
+
+/* ── Meta row ───────────────────────────────────────── */
+function renderMeta(data) {
+  const parts = [];
+  if (data.metadata?.duration_ms) parts.push(`⏱ ${(data.metadata.duration_ms/1000).toFixed(1)}s`);
+  if (data.conversation_id)       parts.push(`Conv ${data.conversation_id.slice(0,8)}`);
+  if (!parts.length) return '';
+  return `<div class="meta">${parts.map(p=>`<span class="meta-tag">${p}</span>`).join('')}</div>`;
+}
+
+/* ── History ────────────────────────────────────────── */
+function addHistory(question, convId) {
+  const hist  = document.getElementById('history');
+  const label = hist.querySelector('.hist-label');
+  hist.querySelectorAll('.hist-item').forEach(el => el.classList.remove('active'));
+
+  const el = document.createElement('div');
+  el.className = 'hist-item active';
+  el.textContent = question;
+  el.title = question;
+  label ? label.after(el) : hist.appendChild(el);
+}
+
+/* ── SQL tokeniser + highlighter ────────────────────── */
+const KWS = new Set('SELECT FROM WHERE JOIN LEFT RIGHT INNER OUTER FULL ON GROUP ORDER BY HAVING LIMIT OFFSET AS DISTINCT WITH UNION ALL AND OR NOT IN EXISTS BETWEEN LIKE IS NULL TRUE FALSE CASE WHEN THEN ELSE END ASC DESC CROSS INSERT INTO VALUES UPDATE SET DELETE CREATE ALTER TABLE INDEX VIEW DATABASE SCHEMA IF OVER PARTITION'.split(' '));
+const FNS = new Set('SUM COUNT AVG MIN MAX COALESCE NULLIF CAST CONVERT DATE_TRUNC DATE_ADD DATE_SUB DATEDIFF YEAR MONTH DAY HOUR NOW CURRENT_DATE CURRENT_TIMESTAMP SUBSTRING SUBSTR TRIM UPPER LOWER LENGTH CONCAT REPLACE ROUND FLOOR CEIL CEILING ABS MOD POWER SQRT ROW_NUMBER RANK DENSE_RANK LEAD LAG FIRST_VALUE LAST_VALUE EXTRACT FORMAT TO_DATE ISNULL IIF STRING_AGG LISTAGG'.split(' '));
+
+function hlSql(sql) {
+  const out = [];
+  let i = 0;
+  while (i < sql.length) {
+    // Single-quoted string
+    if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length && sql[j] !== "'") { if (sql[j] === '\\') j++; j++; }
+      out.push(`<span class="t-str">${esc(sql.slice(i, j+1))}</span>`);
+      i = j + 1; continue;
+    }
+    // Backtick identifier
+    if (sql[i] === '`') {
+      let j = i + 1;
+      while (j < sql.length && sql[j] !== '`') j++;
+      out.push(`<span class="t-tick">${esc(sql.slice(i, j+1))}</span>`);
+      i = j + 1; continue;
+    }
+    // Number
+    if (/[0-9]/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /[0-9.eE+\-]/.test(sql[j])) j++;
+      out.push(`<span class="t-num">${esc(sql.slice(i, j))}</span>`);
+      i = j; continue;
+    }
+    // Word
+    if (/[a-zA-Z_]/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /[a-zA-Z0-9_]/.test(sql[j])) j++;
+      const w = sql.slice(i, j);
+      const u = w.toUpperCase();
+      if (KWS.has(u))      out.push(`<span class="t-kw">${esc(w)}</span>`);
+      else if (FNS.has(u)) out.push(`<span class="t-fn">${esc(w)}</span>`);
+      else                 out.push(esc(w));
+      i = j; continue;
+    }
+    // Dot between identifiers
+    if (sql[i] === '.') { out.push(`<span class="t-dot">.</span>`); i++; continue; }
+    // Default
+    out.push(esc(sql[i]));
+    i++;
+  }
+  return out.join('');
+}
+
+/* ── Markdown ───────────────────────────────────────── */
+function md(text) {
+  if (!text) return '';
+  if (typeof marked !== 'undefined') return marked.parse(text, { breaks:true, gfm:true });
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,     '<em>$1</em>')
+    .replace(/`([^`]+)`/g,       '<code>$1</code>')
+    .replace(/\n/g,              '<br>');
+}
+
+/* ── Format helpers ─────────────────────────────────── */
+function fmtNum(n) {
+  if (n === null || n === undefined) return '';
+  if (typeof n === 'string') n = parseFloat(n);
+  if (isNaN(n)) return String(n);
+  if (Math.abs(n) >= 1e9)  return '$' + (n/1e9).toFixed(2)  + 'B';
+  if (Math.abs(n) >= 1e6)  return '$' + (n/1e6).toFixed(2)  + 'M';
+  if (Math.abs(n) >= 1e3)  return n.toLocaleString('en-US', {maximumFractionDigits:2});
+  return n.toLocaleString('en-US', {maximumFractionDigits:4});
+}
+
+function fmtDate(str) {
+  if (!str) return '';
+  try {
+    const d = new Date(str);
+    if (isNaN(d)) return str;
+    return d.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
+  } catch { return str; }
+}
+
+/* ── Escape ─────────────────────────────────────────── */
+function esc(s)     { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return esc(s).replace(/'/g,'&#39;'); }
+
+/* ── Utils ──────────────────────────────────────────── */
+function getMsgs()  { return document.getElementById('msgs'); }
+function scrollEnd(){ const m = getMsgs(); requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; }); }
+function removeEl(id){ const el = document.getElementById(id); if (el) el.remove(); }
+</script>
+</body>
+</html>

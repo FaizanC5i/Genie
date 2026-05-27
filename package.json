@@ -1,0 +1,20 @@
+{
+  "name": "genie-function-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Function App for Databricks Genie integration",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "storage": "azurite --location .azurite --debug .azurite/debug.log",
+    "start": "func start",
+    "start:verbose": "func start --verbose"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.8.0",
+    "dotenv": "^16.6.1"
+
+  }
+}

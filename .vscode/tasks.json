@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "azurite: start",
+      "type": "shell",
+      "command": "azurite --location .azurite --debug .azurite/debug.log",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "azurite",
+        "pattern": {
+          "regexp": ".*",
+          "file": 1,
+          "location": 2,
+          "message": 0
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Azurite Blob service is starting.*",
+          "endsPattern": ".*Azurite Blob service is successfully listening.*"
+        }
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "func: host start",
+      "type": "shell",
+      "command": "func start --verbose",
+      "isBackground": true,
+      "problemMatcher": "$func-node-watch",
+      "dependsOn": [
+        "azurite: start"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    }
+  ]
+}
