@@ -348,7 +348,7 @@ app.http('genieQuery', {
 
         for (let attempt = 1; attempt <= config.maxPollAttempts; attempt += 1) {
             await sleep(config.pollIntervalMs);
-
+//meow
             let pollResponse;
             try {
                 pollResponse = await databricksFetch(pollUrl, { headers }, config.fetchTimeoutMs);
